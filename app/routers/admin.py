@@ -8,10 +8,40 @@ from sqlalchemy.orm import Session
 
 from app.dependencies import get_db, require_admin
 from app.models.usage_event import EventType, UsageEvent
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.schemas.user import UserResponse
+from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+@router.post("/setup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+def setup_admin(
+    db: Annotated[Session, Depends(get_db)],
+    email: str = Query(...),
+    password: str = Query(...),
+) -> User:
+    """One-time admin setup. Only works if no admin user exists yet."""
+    existing_admin = db.query(User).filter(User.role == UserRole.admin).first()
+    if existing_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin user already exists",
+        )
+    user = db.query(User).filter(User.email == email).first()
+    if user:
+        user.role = UserRole.admin
+        user.hashed_password = AuthService.hash_password(password)
+    else:
+        user = User(
+            email=email,
+            hashed_password=AuthService.hash_password(password),
+            role=UserRole.admin,
+        )
+        db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 @router.get("/stats/overview")
