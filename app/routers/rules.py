@@ -114,8 +114,8 @@ def upload_rules(
 
     try:
         storage_path = storage_service.upload_file(file_bytes, safe_name, content_type="application/pdf")
-    except RuntimeError as exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Storage error: {exc}") from exc
 
     # Deactivate all previous versions
     db.query(RulesDocument).filter(RulesDocument.is_active == True).update(  # noqa: E712
