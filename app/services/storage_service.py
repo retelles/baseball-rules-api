@@ -14,18 +14,27 @@ R2_ENDPOINT_URL = f"https://{settings.R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
 
 class StorageService:
     def __init__(self) -> None:
-        self.client = boto3.client(
-            "s3",
-            endpoint_url=R2_ENDPOINT_URL,
-            aws_access_key_id=settings.R2_ACCESS_KEY_ID,
-            aws_secret_access_key=settings.R2_SECRET_ACCESS_KEY,
-            config=Config(
-                signature_version="s3v4",
-                retries={"max_attempts": 3, "mode": "standard"},
-            ),
-            region_name="auto",
-        )
+        self._client = None
         self.bucket = settings.R2_BUCKET_NAME
+
+    @property
+    def client(self):
+        if self._client is None:
+            if not settings.R2_ACCOUNT_ID:
+                raise RuntimeError("R2 storage is not configured. Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, and R2_BUCKET_NAME.")
+            endpoint_url = f"https://{settings.R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+            self._client = boto3.client(
+                "s3",
+                endpoint_url=endpoint_url,
+                aws_access_key_id=settings.R2_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.R2_SECRET_ACCESS_KEY,
+                config=Config(
+                    signature_version="s3v4",
+                    retries={"max_attempts": 3, "mode": "standard"},
+                ),
+                region_name="auto",
+            )
+        return self._client
 
     def upload_file(self, file_bytes: bytes, filename: str, content_type: str = "application/pdf") -> str:
         """Upload file bytes to R2 and return the storage path (object key)."""
