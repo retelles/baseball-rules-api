@@ -9,14 +9,14 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    SENDGRID_API_KEY: str
-    SENDGRID_FROM_EMAIL: str
-    FRONTEND_URL: str
+    SENDGRID_API_KEY: str = ""
+    SENDGRID_FROM_EMAIL: str = ""
+    FRONTEND_URL: str = ""
 
-    R2_ACCOUNT_ID: str
-    R2_ACCESS_KEY_ID: str
-    R2_SECRET_ACCESS_KEY: str
-    R2_BUCKET_NAME: str
+    R2_ACCOUNT_ID: str = ""
+    R2_ACCESS_KEY_ID: str = ""
+    R2_SECRET_ACCESS_KEY: str = ""
+    R2_BUCKET_NAME: str = ""
 
     ALLOWED_ORIGINS: str = "*"
 
