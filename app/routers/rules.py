@@ -112,22 +112,22 @@ def ask_rules_question(
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active rules document available")
 
-    # Get rulebook text (cached after first load)
+    # Get rulebook pages (cached after first load)
     try:
-        rulebook_text = ai_service.get_rulebook_text(
+        pages = ai_service.get_pages(
             document_id=str(document.id),
             pdf_bytes_loader=lambda: storage_service.get_file_bytes(document.storage_path),
         )
     except Exception as exc:
-        logger.error("Failed to load rulebook text: %s", exc)
+        logger.error("Failed to load rulebook pages: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Could not load the rulebook. Please try again.",
         ) from exc
 
-    # Ask Claude
+    # Find relevant pages and ask Claude
     try:
-        answer = ai_service.ask(question, rulebook_text)
+        answer = ai_service.ask(question, pages)
     except Exception as exc:
         logger.error("AI service error: %s", exc)
         raise HTTPException(
