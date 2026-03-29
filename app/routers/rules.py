@@ -185,10 +185,10 @@ def ask_rules_question(
     try:
         answer = ai_service.ask(question, pages)
     except Exception as exc:
-        logger.error("AI service error: %s", exc)
+        logger.error("AI service error: %s %s", type(exc).__name__, exc, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Could not get an answer right now. Please try again.",
+            detail=f"AI error: {type(exc).__name__}: {exc}",
         ) from exc
 
     # Log the event
