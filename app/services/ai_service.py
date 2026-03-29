@@ -47,6 +47,34 @@ class AIService:
         self._cached_doc_id = document_id
         return self._rulebook_text
 
+    def warm_cache(self) -> None:
+        """Pre-load the active rulebook text at startup."""
+        from app.database import SessionLocal
+        from app.models.rules_document import RulesDocument
+        from app.services.storage_service import storage_service
+
+        db = SessionLocal()
+        try:
+            document = (
+                db.query(RulesDocument)
+                .filter(RulesDocument.is_active == True)  # noqa: E712
+                .order_by(RulesDocument.uploaded_at.desc())
+                .first()
+            )
+            if not document:
+                logger.info("No active rulebook to warm cache")
+                return
+
+            logger.info("Warming rulebook cache for doc %s", document.id)
+            pdf_bytes = storage_service.get_file_bytes(document.storage_path)
+            self._rulebook_text = self.extract_text_from_pdf(pdf_bytes)
+            self._cached_doc_id = str(document.id)
+            logger.info("Rulebook cache warmed (%d chars)", len(self._rulebook_text))
+        except Exception as exc:
+            logger.error("Failed to warm rulebook cache: %s", exc)
+        finally:
+            db.close()
+
     def ask(self, question: str, rulebook_text: str) -> str:
         """Send a question about the rulebook to Claude and return the answer."""
         system_prompt = (
