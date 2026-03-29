@@ -61,7 +61,7 @@ class StorageService:
                 ExpiresIn=expiry_seconds,
             )
             return url
-        except ClientError as exc:
+        except Exception as exc:
             logger.error("Failed to generate presigned URL for %s: %s", storage_path, exc)
             raise RuntimeError(f"Could not generate download URL: {exc}") from exc
 
