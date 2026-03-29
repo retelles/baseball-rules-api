@@ -82,6 +82,20 @@ def download_pdf(
     )
 
 
+@router.get("/rules/ask-status")
+def ask_status(
+    _current_user: Annotated[User, Depends(get_current_user)],
+) -> dict:
+    """Debug: check if rulebook cache is warm and API key is set."""
+    from app.config import settings
+    return {
+        "cache_doc_id": ai_service._cached_doc_id,
+        "pages_cached": len(ai_service._pages) if ai_service._pages else 0,
+        "api_key_set": bool(settings.ANTHROPIC_API_KEY),
+        "api_key_prefix": settings.ANTHROPIC_API_KEY[:8] + "..." if settings.ANTHROPIC_API_KEY else "NOT SET",
+    }
+
+
 class AskRequest(BaseModel):
     question: str
 
