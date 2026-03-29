@@ -52,6 +52,15 @@ class StorageService:
             logger.error("R2 upload failed for %s: %s", filename, exc)
             raise RuntimeError(f"File upload failed: {exc}") from exc
 
+    def get_file_bytes(self, storage_path: str) -> bytes:
+        """Download file bytes directly from R2."""
+        try:
+            response = self.client.get_object(Bucket=self.bucket, Key=storage_path)
+            return response["Body"].read()
+        except Exception as exc:
+            logger.error("Failed to download %s from R2: %s", storage_path, exc)
+            raise RuntimeError(f"Could not download file: {exc}") from exc
+
     def get_download_url(self, storage_path: str, expiry_seconds: int = 3600) -> str:
         """Generate a presigned download URL valid for expiry_seconds (default 1 hour)."""
         try:

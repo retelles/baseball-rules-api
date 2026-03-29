@@ -4,6 +4,7 @@ from typing import Annotated
 
 import pdfplumber
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_current_user, get_db, require_admin
@@ -42,11 +43,11 @@ def get_active_rules(
 
 
 @router.get("/rules/download")
-def get_download_url(
+def download_pdf(
     current_user: Annotated[User, Depends(get_current_user)],
     background_tasks: BackgroundTasks,
     db: Annotated[Session, Depends(get_db)],
-) -> dict[str, str]:
+) -> Response:
     document = (
         db.query(RulesDocument)
         .filter(RulesDocument.is_active == True)  # noqa: E712
@@ -57,7 +58,7 @@ def get_download_url(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active rules document available")
 
     try:
-        url = storage_service.get_download_url(document.storage_path)
+        pdf_bytes = storage_service.get_file_bytes(document.storage_path)
     except RuntimeError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
@@ -69,7 +70,11 @@ def get_download_url(
         {"document_id": str(document.id), "filename": document.filename},
     )
 
-    return {"download_url": url, "filename": document.filename, "expires_in_seconds": 3600}
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{document.filename}"'},
+    )
 
 
 @router.post(
