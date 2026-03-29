@@ -29,12 +29,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    import threading
-    from app.services.ai_service import ai_service
-
     print("Baseball Rules API starting up...")
-    # Pre-load rulebook text in background so first /rules/ask is fast
-    threading.Thread(target=ai_service.warm_cache, daemon=True).start()
     yield
     print("Baseball Rules API shutting down...")
 

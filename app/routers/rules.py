@@ -96,12 +96,12 @@ def ask_status(
     }
 
 
-@router.post("/rules/warm-cache")
-def warm_cache_endpoint(
+@router.post("/rules/backfill-text")
+def backfill_extracted_text(
     _current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
-    """Manually warm the rulebook cache and return timing info."""
+    """One-time: extract text from the active PDF and save to DB."""
     import time
 
     document = (
@@ -113,28 +113,30 @@ def warm_cache_endpoint(
     if not document:
         return {"error": "No active document"}
 
+    if document.extracted_text:
+        return {"message": "Already has extracted text", "chars": len(document.extracted_text)}
+
     t0 = time.time()
     try:
         pdf_bytes = storage_service.get_file_bytes(document.storage_path)
     except Exception as exc:
-        return {"error": f"R2 download failed: {exc}", "time": time.time() - t0}
+        return {"error": f"R2 download failed: {exc}"}
 
     t1 = time.time()
     try:
-        pages = ai_service.extract_pages_from_pdf(pdf_bytes)
-        ai_service._pages = pages
-        ai_service._cached_doc_id = str(document.id)
+        extracted = ai_service.extract_text_from_pdf(pdf_bytes)
     except Exception as exc:
-        return {"error": f"PDF extraction failed: {exc}", "download_time": t1 - t0, "time": time.time() - t0}
+        return {"error": f"PDF extraction failed: {exc}"}
 
     t2 = time.time()
+    document.extracted_text = extracted
+    db.commit()
+
     return {
         "success": True,
-        "pages": len(pages),
-        "pdf_size_bytes": len(pdf_bytes),
+        "chars": len(extracted),
         "download_time_s": round(t1 - t0, 2),
         "extraction_time_s": round(t2 - t1, 2),
-        "total_time_s": round(t2 - t0, 2),
     }
 
 
@@ -168,22 +170,16 @@ def ask_rules_question(
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active rules document available")
 
-    # Get rulebook pages (cached after first load)
-    try:
-        pages = ai_service.get_pages(
-            document_id=str(document.id),
-            pdf_bytes_loader=lambda: storage_service.get_file_bytes(document.storage_path),
-        )
-    except Exception as exc:
-        logger.error("Failed to load rulebook pages: %s", exc)
+    # Get extracted text from DB (extracted at upload time)
+    if not document.extracted_text:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Could not load the rulebook. Please try again.",
-        ) from exc
+            detail="Rulebook text not available. Please re-upload the PDF.",
+        )
 
-    # Find relevant pages and ask Claude
+    # Ask Claude with relevant excerpts
     try:
-        answer = ai_service.ask(question, pages)
+        answer = ai_service.ask(question, document.extracted_text)
     except Exception as exc:
         logger.error("AI service error: %s %s", type(exc).__name__, exc, exc_info=True)
         raise HTTPException(
@@ -230,7 +226,7 @@ def upload_rules(
             detail="File does not appear to be a valid PDF (missing PDF header)",
         )
 
-    # Validate it's a readable PDF
+    # Validate it's a readable PDF and extract text for AI
     try:
         with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
             page_count = len(pdf.pages)
@@ -239,6 +235,10 @@ def upload_rules(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"File does not appear to be a valid PDF: {exc}",
         ) from exc
+
+    # Extract text for the AI ask feature
+    extracted_text = ai_service.extract_text_from_pdf(file_bytes)
+    logger.info("Extracted %d chars of text from %d-page PDF", len(extracted_text), page_count)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     safe_name = f"{timestamp}_{file.filename}"
@@ -259,6 +259,7 @@ def upload_rules(
         version_label=version_label,
         is_active=True,
         file_size_bytes=file_size,
+        extracted_text=extracted_text,
         uploaded_by=current_user.id,
     )
     db.add(document)
