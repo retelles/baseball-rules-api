@@ -96,6 +96,48 @@ def ask_status(
     }
 
 
+@router.post("/rules/warm-cache")
+def warm_cache_endpoint(
+    _current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    """Manually warm the rulebook cache and return timing info."""
+    import time
+
+    document = (
+        db.query(RulesDocument)
+        .filter(RulesDocument.is_active == True)  # noqa: E712
+        .order_by(RulesDocument.uploaded_at.desc())
+        .first()
+    )
+    if not document:
+        return {"error": "No active document"}
+
+    t0 = time.time()
+    try:
+        pdf_bytes = storage_service.get_file_bytes(document.storage_path)
+    except Exception as exc:
+        return {"error": f"R2 download failed: {exc}", "time": time.time() - t0}
+
+    t1 = time.time()
+    try:
+        pages = ai_service.extract_pages_from_pdf(pdf_bytes)
+        ai_service._pages = pages
+        ai_service._cached_doc_id = str(document.id)
+    except Exception as exc:
+        return {"error": f"PDF extraction failed: {exc}", "download_time": t1 - t0, "time": time.time() - t0}
+
+    t2 = time.time()
+    return {
+        "success": True,
+        "pages": len(pages),
+        "pdf_size_bytes": len(pdf_bytes),
+        "download_time_s": round(t1 - t0, 2),
+        "extraction_time_s": round(t2 - t1, 2),
+        "total_time_s": round(t2 - t0, 2),
+    }
+
+
 class AskRequest(BaseModel):
     question: str
 
