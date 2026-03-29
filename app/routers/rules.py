@@ -1,10 +1,12 @@
 import io
+import logging
 from datetime import datetime, timezone
 from typing import Annotated
 
 import pdfplumber
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_current_user, get_db, require_admin
@@ -12,7 +14,10 @@ from app.models.rules_document import RulesDocument
 from app.models.usage_event import EventType, UsageEvent
 from app.models.user import User
 from app.schemas.rules import ActiveRulesResponse, RulesDocumentResponse
+from app.services.ai_service import ai_service
 from app.services.storage_service import storage_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["rules"])
 
@@ -75,6 +80,69 @@ def download_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{document.filename}"'},
     )
+
+
+class AskRequest(BaseModel):
+    question: str
+
+
+class AskResponse(BaseModel):
+    answer: str
+
+
+@router.post("/rules/ask", response_model=AskResponse)
+def ask_rules_question(
+    body: AskRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    background_tasks: BackgroundTasks,
+    db: Annotated[Session, Depends(get_db)],
+) -> AskResponse:
+    """Ask a question about the rulebook using AI."""
+    question = body.question.strip()
+    if not question:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Question cannot be empty")
+
+    # Get the active rulebook
+    document = (
+        db.query(RulesDocument)
+        .filter(RulesDocument.is_active == True)  # noqa: E712
+        .order_by(RulesDocument.uploaded_at.desc())
+        .first()
+    )
+    if not document:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active rules document available")
+
+    # Download PDF and extract text
+    try:
+        pdf_bytes = storage_service.get_file_bytes(document.storage_path)
+        rulebook_text = ai_service.extract_text_from_pdf(pdf_bytes)
+    except Exception as exc:
+        logger.error("Failed to load rulebook text: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not load the rulebook. Please try again.",
+        ) from exc
+
+    # Ask Claude
+    try:
+        answer = ai_service.ask(question, rulebook_text)
+    except Exception as exc:
+        logger.error("AI service error: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not get an answer right now. Please try again.",
+        ) from exc
+
+    # Log the event
+    background_tasks.add_task(
+        _log_event,
+        db,
+        str(current_user.id),
+        EventType.search,
+        {"question": question[:200], "document_id": str(document.id)},
+    )
+
+    return AskResponse(answer=answer)
 
 
 @router.post(

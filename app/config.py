@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     R2_SECRET_ACCESS_KEY: str = ""
     R2_BUCKET_NAME: str = ""
 
+    ANTHROPIC_API_KEY: str = ""
+
     ALLOWED_ORIGINS: str = "*"
 
     @property
