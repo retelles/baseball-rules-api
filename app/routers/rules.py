@@ -112,10 +112,12 @@ def ask_rules_question(
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active rules document available")
 
-    # Download PDF and extract text
+    # Get rulebook text (cached after first load)
     try:
-        pdf_bytes = storage_service.get_file_bytes(document.storage_path)
-        rulebook_text = ai_service.extract_text_from_pdf(pdf_bytes)
+        rulebook_text = ai_service.get_rulebook_text(
+            document_id=str(document.id),
+            pdf_bytes_loader=lambda: storage_service.get_file_bytes(document.storage_path),
+        )
     except Exception as exc:
         logger.error("Failed to load rulebook text: %s", exc)
         raise HTTPException(

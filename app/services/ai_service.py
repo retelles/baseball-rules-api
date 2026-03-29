@@ -1,9 +1,7 @@
 import logging
-from functools import lru_cache
-
-import pdfplumber
 import io
 
+import pdfplumber
 import anthropic
 
 from app.config import settings
@@ -17,6 +15,7 @@ class AIService:
     def __init__(self) -> None:
         self._client: anthropic.Anthropic | None = None
         self._rulebook_text: str | None = None
+        self._cached_doc_id: str | None = None
 
     @property
     def client(self) -> anthropic.Anthropic:
@@ -36,6 +35,18 @@ class AIService:
                     text_parts.append(f"--- Page {i} ---\n{page_text}")
         return "\n\n".join(text_parts)
 
+    def get_rulebook_text(self, document_id: str, pdf_bytes_loader) -> str:
+        """Get cached rulebook text, or extract and cache it."""
+        if self._rulebook_text and self._cached_doc_id == document_id:
+            logger.info("Using cached rulebook text for doc %s", document_id)
+            return self._rulebook_text
+
+        logger.info("Extracting text from PDF for doc %s", document_id)
+        pdf_bytes = pdf_bytes_loader()
+        self._rulebook_text = self.extract_text_from_pdf(pdf_bytes)
+        self._cached_doc_id = document_id
+        return self._rulebook_text
+
     def ask(self, question: str, rulebook_text: str) -> str:
         """Send a question about the rulebook to Claude and return the answer."""
         system_prompt = (
@@ -49,7 +60,7 @@ class AIService:
         )
 
         response = self.client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-haiku-4-5-20251001",
             max_tokens=1024,
             system=system_prompt,
             messages=[{"role": "user", "content": question}],
